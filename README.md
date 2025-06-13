@@ -34,45 +34,6 @@ Metrics like finish time, turnaround time, and normalized turnaround time are ca
 Trace View: Shows per-time execution trace for each process.
 Stats View: Outputs summarized performance statistics including averages.
 
-# Sample Input Format
-
-Enter number of processes: 3
-Enter name, arrival time, and service time for process 1: P1 0 5
-Enter name, arrival time, and service time for process 2: P2 2 3
-Enter name, arrival time, and service time for process 3: P3 4 1
-Choose Algorithm:
-1. FCFS
-2. RR
-3. SPN
-4. SRT
-5. HRRN
-6. AGING
-Enter choice: 2
-Enter quantum for Round Robin: 2
-Choose Output Format:
-1. Trace
-2. Statistics
-Enter choice: 1
-# Example Outputs
-- Trace View
-
-0 1 2 3 4 5 6 7 8 9 ...
-------------------------------------------------
-P1     |*|*|.|*|*|.|.|.|.|.|
-P2     |.|.|*|*|.|*|.|.|.|.|
-P3     |.|.|.|.|.|.|*|.|.|.|
-------------------------------------------------
-
-- Statistics View
-
-RR-2
-Process    |  P1  |  P2  |  P3  |
-Arrival    |  0   |  2   |  4   |
-Service    |  5   |  3   |  1   | Mean
-Finish     | 10   | 9    | 7    |-----|
-Turnaround | 10  | 7    | 3    |  6.67|
-NormTurn   | 2.00| 2.33 | 3.00 |  2.44|
-
 # Compilation & Execution
 To compile and run:
 bash
