@@ -37,8 +37,7 @@ Stats View: Outputs summarized performance statistics including averages.
 # Compilation & Execution
 To compile and run:
 bash
-Copy
-Edit
+
 g++ main.cpp -o scheduler
 ./scheduler
 Make sure you are using a C++11 compatible compiler or above.
