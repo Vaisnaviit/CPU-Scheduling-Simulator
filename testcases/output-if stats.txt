@@ -1,0 +1,7 @@
+RR-2
+Process    |  P1  |  P2  |  P3  |
+Arrival    |  0   |  2   |  4   |
+Service    |  5   |  3   |  1   | Mean
+Finish     | 10   | 9    | 7    |-----|
+Turnaround | 10  | 7    | 3    |  6.67|
+NormTurn   | 2.00| 2.33 | 3.00 |  2.44|

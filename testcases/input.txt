@@ -1,0 +1,17 @@
+Enter number of processes: 3
+Enter name, arrival time, and service time for process 1: P1 0 5
+Enter name, arrival time, and service time for process 2: P2 2 3
+Enter name, arrival time, and service time for process 3: P3 4 1
+Choose Algorithm:
+1. FCFS
+2. RR
+3. SPN
+4. SRT
+5. HRRN
+6. AGING
+Enter choice: 2
+Enter quantum for Round Robin: 2
+Choose Output Format:
+1. Trace
+2. Statistics
+Enter choice: 1
