@@ -1,0 +1,21 @@
+Enter total number of processes: 2
+Enter process name, arrival time, and service time for each process:
+p a1 5   0 5
+a2 4 6
+Select the Scheduling Algorithm:
+1. First Come First Serve (FCFS)
+2. Round Robin (RR)
+3. Shortest Process Next (SPN)
+4. Shortest Remaining Time (SRT)
+5. Highest Response Ratio Next (HRRN)
+6. Aging
+Enter choice: 2
+Enter Time Quantum: 3
+Select the Output Format:
+1. Trace Format
+2. Statistics Format
+Enter choice: 1
+Time: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+
+a1: * * * * * . . . . . . . . . . . . . . .
+a2: . . . . . * * * * * * . . . . . . . . .
