@@ -1,292 +1,303 @@
 #include <bits/stdc++.h>
 using namespace std;
 
-// Global Constants for Operation Types
+// Constants representing two types of output modes
 const string TRACE = "trace";
 const string SHOW_STATISTICS = "stats";
 
-// Global variables for process scheduling data
-string operation;
+// Global variables for scheduling simulation
 int last_instant = 0, process_count = 0;
-vector<tuple<string, int, int>> processes; // Stores process name, arrival time, service time
-vector<vector<char>> timeline; // Represents the timeline of process execution
-unordered_map<string, int> processToIndex; // Maps process names to their index in the processes vector
 
-// Results vectors
-vector<int> finishTime;     // Stores the finish time for each process
-vector<int> turnAroundTime; // Stores the turnaround time for each process
-vector<float> normTurn;     // Stores the normalized turnaround time for each process
+// Vector storing all processes as a tuple: (ProcessName, ArrivalTime, ServiceTime)
+vector<tuple<string, int, int>> processes;
 
-// Array of algorithm names for printing statistics
+// Timeline matrix: tracks execution for each time unit of each process
+// '*' means running, '.' means waiting, ' ' (blank) means no process yet
+vector<vector<char>> timeline;
+
+// Map linking process name to its index in the processes vector
+unordered_map<string, int> processToIndex;
+
+// Result containers for each process
+vector<int> finishTime;     // Time when a process finishes execution
+vector<int> turnAroundTime; // Turnaround = FinishTime - ArrivalTime
+vector<float> normTurn;     // Normalized Turnaround = Turnaround / ServiceTime
+
+// Names of algorithms (for printing Stats table)
 const string ALGORITHMS[9] = {"", "FCFS", "RR-", "SPN", "SRT", "HRRN", "FB-1", "FB-2i", "AGING"};
 
-// Function to clear the timeline for a new simulation
+// Reset/clear timeline before each scheduling algorithm runs
 void clear_timeline() {
     for (int i = 0; i < last_instant; i++)
         for (int j = 0; j < process_count; j++)
-            timeline[i][j] = ' ';
+            timeline[i][j] = ' ';  // Blank means nothing executed here yet
 }
 
-// Helper functions to get process attributes from a tuple
-int getArrivalTime(tuple<string, int, int>& a) { return get<1>(a); }
-int getServiceTime(tuple<string, int, int>& a) { return get<2>(a); }
-string getProcessName(tuple<string, int, int>& a) { return get<0>(a); }
+// Helper functions for easy tuple data access
+int getArrivalTime(const tuple<string,int,int>& a) { return get<1>(a); }
+int getServiceTime(const tuple<string,int,int>& a) { return get<2>(a); }
+string getProcessName(const tuple<string,int,int>& a) { return get<0>(a); }
 
-// Function to calculate the response ratio for HRRN
+// HRRN formula: (Waiting + Service) / Service
 double calculate_response_ratio(int wait_time, int service_time) {
     return (wait_time + service_time) * 1.0 / service_time;
 }
 
-// Fills in '.' for wait times in the timeline after a process finishes
+// Fill remaining waiting periods with '.' after execution completes
 void fillInWaitTime() {
     for (int i = 0; i < process_count; i++) {
         int arrivalTime = getArrivalTime(processes[i]);
-        for (int k = arrivalTime; k < finishTime[i]; k++) {
-            if (timeline[k][i] != '*') timeline[k][i] = '.'; // Mark as waiting if not running
+        for (int k = arrivalTime; k < finishTime[i] && k < last_instant; k++) {
+            if (timeline[k][i] != '*') timeline[k][i] = '.';
         }
     }
 }
 
-// First Come First Serve (FCFS) scheduling algorithm
+/*
+ FCFS: First Come First Serve Scheduling
+ Non-preemptive: jobs executed in arrival order
+*/
 void firstComeFirstServe() {
-    // Start time is the arrival time of the first process
     int time = getArrivalTime(processes[0]);
+
     for (int i = 0; i < process_count; i++) {
         int arrival = getArrivalTime(processes[i]);
         int service = getServiceTime(processes[i]);
 
-        // Calculate finish time, turnaround time, and normalized turnaround time
-        finishTime[i] = time + service;
+        // Process starts when CPU is free or when it arrives
+        finishTime[i] = max(time, arrival) + service;
+
+        // Calculating turnaround and normalized turnaround
         turnAroundTime[i] = finishTime[i] - arrival;
         normTurn[i] = turnAroundTime[i] * 1.0 / service;
 
-        // Fill the timeline: '*' for running, '.' for waiting
-        for (int j = time; j < finishTime[i]; j++) timeline[j][i] = '*';
-        for (int j = arrival; j < time; j++) timeline[j][i] = '.';
-        time = finishTime[i]; // Update current time
+        // Fill execution '*' in timeline
+        int start = max(time, arrival);
+        for (int j = start; j < finishTime[i] && j < last_instant; j++) timeline[j][i] = '*';
+
+        // Fill waiting time '.'
+        for (int j = arrival; j < start && j < last_instant; j++) timeline[j][i] = '.';
+
+        time = finishTime[i]; // CPU moves forward
     }
+    fillInWaitTime();
 }
 
-// Round Robin (RR) scheduling algorithm
+/*
+ Round Robin Scheduling (Preemptive)
+ Each process gets fixed quantum of CPU time
+
+*/
 void roundRobin(int quantum) {
-    queue<int> q; // Queue to hold indices of ready processes
-    vector<int> remaining(process_count); // Remaining service time for each process
+    queue<int> q; // Queue for ready processes
+    vector<int> remaining(process_count); // Remaining service time
 
-    // Initialize remaining service times
-    for (int i = 0; i < process_count; ++i) remaining[i] = getServiceTime(processes[i]);
+    for (int i = 0; i < process_count; ++i)
+        remaining[i] = getServiceTime(processes[i]);
 
-    int time = 0, j = 0; // Current time and index for processes that have arrived
+    int time = 0, j = 0;
 
-    // Loop until all processes are completed or time reaches last_instant
-    while (time < last_instant || !q.empty()) {
-        // Add newly arrived processes to the queue
-        while (j < process_count && getArrivalTime(processes[j]) <= time) {
+    while (time < last_instant || !q.empty() || j < process_count) {
+        // Add newly arrived processes to queue
+        while (j < process_count && getArrivalTime(processes[j]) <= time)
             q.push(j++);
-        }
 
         if (!q.empty()) {
-            int idx = q.front(); // Get the process at the front of the queue
-            q.pop(); // Remove it from the queue
-
-            // Determine how long the process will run in this quantum
+            int idx = q.front(); q.pop();
             int run = min(quantum, remaining[idx]);
 
-            // Mark the timeline for the running process
-            for (int t = 0; t < run; ++t) {
-                if (time + t < last_instant) // Ensure we don't go out of bounds
-                    timeline[time + t][idx] = '*';
-            }
+            // Mark execution in timeline
+            for (int t = 0; t < run; ++t)
+                if (time + t < last_instant) timeline[time + t][idx] = '*';
 
-            time += run; // Advance time
-            remaining[idx] -= run; // Decrease remaining service time
+            time += run;
+            remaining[idx] -= run;
 
-            // Add any processes that arrived during this quantum to the queue
-            while (j < process_count && getArrivalTime(processes[j]) <= time) {
+            // Re-queue if not finished
+            while (j < process_count && getArrivalTime(processes[j]) <= time)
                 q.push(j++);
-            }
 
-            // If the process is not yet finished, add it back to the queue
-            if (remaining[idx] > 0) {
-                q.push(idx);
-            } else {
-                // If the process is finished, calculate its metrics
+            if (remaining[idx] > 0) q.push(idx);
+            else {
+                // Process completed
                 finishTime[idx] = time;
                 turnAroundTime[idx] = time - getArrivalTime(processes[idx]);
-                normTurn[idx] = turnAroundTime[idx] * 1.0 / getServiceTime(processes[idx]);
+                normTurn[idx] =
+                    turnAroundTime[idx] * 1.0 / getServiceTime(processes[idx]);
             }
         } else {
-            // If the queue is empty, increment time to find the next arriving process
-            time++;
+            // If no ready process, jump to arrival of next process
+            if (j < process_count) time = getArrivalTime(processes[j]);
+            else time++;
         }
     }
-    fillInWaitTime(); // Mark wait times in the timeline
+    fillInWaitTime();
 }
 
-// Shortest Process Next (SPN) scheduling algorithm
+/*
+ SPN: Shortest Process Next
+ Non-preemptive. Selects process having minimum service time
+*/
 void shortestProcessNext() {
-    vector<bool> done(process_count, false); // Tracks if a process is completed
-    int time = 0; // Current time
+    vector<bool> done(process_count, false);
+    int time = 0;
 
-    // Loop until all processes are completed
     while (count(done.begin(), done.end(), true) < process_count) {
-        int idx = -1; // Index of the selected process
-        int minST = INT_MAX; // Minimum service time found
+        int idx = -1, minST = INT_MAX;
 
-        // Find the process with the shortest service time among arrived and not done processes
-        for (int i = 0; i < process_count; ++i) {
-            if (!done[i] && getArrivalTime(processes[i]) <= time && getServiceTime(processes[i]) < minST) {
-                idx = i;
-                minST = getServiceTime(processes[i]);
+        // Find shortest job from ready queue
+        for (int i = 0; i < process_count; ++i)
+            if (!done[i] && getArrivalTime(processes[i]) <= time &&
+                getServiceTime(processes[i]) < minST) {
+                idx = i; minST = getServiceTime(processes[i]);
             }
-        }
 
         if (idx == -1) {
-            time++; // No process is ready, advance time
+            // CPU idle: move time to next arrival
+            int nextArrival = INT_MAX;
+            for (int i = 0; i < process_count; ++i)
+                if (!done[i]) nextArrival = min(nextArrival, getArrivalTime(processes[i]));
+            time = nextArrival;
             continue;
         }
 
-        // Execute the selected process
-        for (int t = time; t < time + minST; ++t) {
-            if (t < last_instant) // Ensure we don't go out of bounds
-                timeline[t][idx] = '*';
-        }
-        time += minST; // Advance time by service time
+        // Execute job completely
+        for (int t = time; t < time + minST && t < last_instant; ++t)
+            timeline[t][idx] = '*';
 
-        // Calculate metrics for the finished process
+        time += minST;
         finishTime[idx] = time;
         turnAroundTime[idx] = time - getArrivalTime(processes[idx]);
         normTurn[idx] = turnAroundTime[idx] * 1.0 / minST;
-        done[idx] = true; // Mark process as done
+        done[idx] = true;
     }
-    fillInWaitTime(); // Mark wait times in the timeline
+    fillInWaitTime();
 }
 
-// Shortest Remaining Time (SRT) scheduling algorithm
+/*
+ SRT: Shortest Remaining Time Scheduling
+ Preemptive version of SPN
+*/
 void shortestRemainingTime() {
-    vector<int> remaining(process_count); // Remaining service time for each process
-    for (int i = 0; i < process_count; i++) remaining[i] = getServiceTime(processes[i]);
+    vector<int> remaining(process_count);
+    for (int i = 0; i < process_count; i++)
+        remaining[i] = getServiceTime(processes[i]);
 
-    vector<bool> done(process_count, false); // Tracks if a process is completed
-    int time = 0, completed = 0; // Current time and number of completed processes
+    vector<bool> done(process_count, false);
+    int time = 0, completed = 0;
 
-    // Loop until all processes are completed
     while (completed < process_count) {
-        int idx = -1; // Index of the selected process
-        int minRem = INT_MAX; // Minimum remaining time found
+        int idx = -1, minRem = INT_MAX;
 
-        // Find the process with the shortest remaining time among arrived and not done processes
-        for (int i = 0; i < process_count; ++i) {
-            if (!done[i] && getArrivalTime(processes[i]) <= time && remaining[i] < minRem && remaining[i] > 0) {
-                idx = i;
-                minRem = remaining[i];
+        // Find ready process with minimum remaining time
+        for (int i = 0; i < process_count; ++i)
+            if (!done[i] && getArrivalTime(processes[i]) <= time &&
+                remaining[i] > 0 && remaining[i] < minRem) {
+                idx = i; minRem = remaining[i];
             }
-        }
 
         if (idx == -1) {
-            time++; // No process is ready, advance time
+            // Jump to next arriving process
+            int nextArrival = INT_MAX;
+            for (int i = 0; i < process_count; ++i)
+                if (!done[i]) nextArrival = min(nextArrival, getArrivalTime(processes[i]));
+            time = max(time + 1, nextArrival);
             continue;
         }
 
-        // Execute the selected process for one unit of time
-        if (time < last_instant) // Ensure we don't go out of bounds
-            timeline[time][idx] = '*';
-        remaining[idx]--;
-        time++;
+        // Execute only 1 time unit
+        if (time < last_instant) timeline[time][idx] = '*';
+        remaining[idx]--; time++;
 
-        // If the process is finished
         if (remaining[idx] == 0) {
             finishTime[idx] = time;
-            int arrival = getArrivalTime(processes[idx]);
-            int service = getServiceTime(processes[idx]);
-            turnAroundTime[idx] = time - arrival;
-            normTurn[idx] = turnAroundTime[idx] * 1.0 / service;
+            turnAroundTime[idx] = time - getArrivalTime(processes[idx]);
+            normTurn[idx] = turnAroundTime[idx] * 1.0 / getServiceTime(processes[idx]);
             done[idx] = true;
             completed++;
         }
     }
-    fillInWaitTime(); // Mark wait times in the timeline
+    fillInWaitTime();
 }
 
-// Highest Response Ratio Next (HRRN) scheduling algorithm
+/*
+ HRRN: Highest Response Ratio Next
+ Prioritizes long-waiting processes
+*/
 void highestResponseRatioNext() {
-    vector<bool> done(process_count, false); // Tracks if a process is completed
-    int time = 0; // Current time
+    vector<bool> done(process_count, false);
+    int time = 0;
 
-    // Loop until all processes are completed
     while (count(done.begin(), done.end(), true) < process_count) {
-        double maxRatio = -1.0; // Maximum response ratio found
-        int idx = -1; // Index of the selected process
+        double maxRatio = -1.0; int idx = -1;
 
-        // Find the process with the highest response ratio among arrived and not done processes
-        for (int i = 0; i < process_count; ++i) {
+        // Select process with maximum response ratio
+        for (int i = 0; i < process_count; ++i)
             if (!done[i] && getArrivalTime(processes[i]) <= time) {
                 int wait = time - getArrivalTime(processes[i]);
                 int service = getServiceTime(processes[i]);
                 double ratio = calculate_response_ratio(wait, service);
-                if (ratio > maxRatio) {
-                    maxRatio = ratio;
-                    idx = i;
-                }
+                if (ratio > maxRatio) { maxRatio = ratio; idx = i; }
             }
-        }
 
         if (idx == -1) {
-            time++; // No process is ready, advance time
+            // Move to next arrival
+            int nextArrival = INT_MAX;
+            for (int i = 0; i < process_count; ++i)
+                if (!done[i]) nextArrival = min(nextArrival, getArrivalTime(processes[i]));
+            time = max(time + 1, nextArrival);
             continue;
         }
 
-        // Execute the selected process
+        // Execute entire job
         int st = getServiceTime(processes[idx]);
-        for (int t = time; t < time + st; ++t) {
-            if (t < last_instant) // Ensure we don't go out of bounds
-                timeline[t][idx] = '*';
-        }
-        time += st; // Advance time by service time
+        for (int t = time; t < time + st && t < last_instant; ++t)
+            timeline[t][idx] = '*';
 
-        // Calculate metrics for the finished process
+        time += st;
         finishTime[idx] = time;
         turnAroundTime[idx] = time - getArrivalTime(processes[idx]);
         normTurn[idx] = turnAroundTime[idx] * 1.0 / st;
-        done[idx] = true; // Mark process as done
+        done[idx] = true;
     }
-    fillInWaitTime(); // Mark wait times in the timeline
+    fillInWaitTime();
 }
 
-// Aging scheduling algorithm (simple priority aging)
+/*
+Aging Algorithm
+ Wait increases priority so starvation doesn't happen
+ Preemptive scheduling based on aging priority counter
+*/
 void agingAlgorithm() {
-    vector<int> remaining(process_count); // Remaining service time for each process
-    for (int i = 0; i < process_count; i++) remaining[i] = getServiceTime(processes[i]);
+    vector<int> remaining(process_count);
+    for (int i = 0; i < process_count; i++)
+        remaining[i] = getServiceTime(processes[i]);
 
-    vector<int> priority(process_count, 0); // Priority for each process (increases with age)
-    vector<bool> done(process_count, false); // Tracks if a process is completed
-    int time = 0; // Current time
+    vector<int> priority(process_count, 0);
+    vector<bool> done(process_count, false);
+    int time = 0;
 
-    // Loop until all processes are completed
     while (count(done.begin(), done.end(), true) < process_count) {
-        int idx = -1; // Index of the selected process
+        int idx = -1;
 
-        // Find the process with the highest priority among arrived and not done processes
-        for (int i = 0; i < process_count; ++i) {
+        // Increase priority for every waiting job
+        for (int i = 0; i < process_count; ++i)
             if (!done[i] && getArrivalTime(processes[i]) <= time) {
-                priority[i]++; // Increase priority for waiting processes
-                if (idx == -1 || priority[i] > priority[idx]) {
+                priority[i]++;
+                if (idx == -1 || priority[i] > priority[idx])
                     idx = i;
-                }
             }
-        }
 
         if (idx == -1) {
-            time++; // No process is ready, advance time
+            // idle CPU
+            time++;
             continue;
         }
 
-        // Execute the selected process for one unit of time
-        if (time < last_instant) // Ensure we don't go out of bounds
-            timeline[time][idx] = '*';
-        remaining[idx]--;
-        time++;
+        // Execute one unit
+        if (time < last_instant) timeline[time][idx] = '*';
+        remaining[idx]--; time++;
 
-        // If the process is finished
         if (remaining[idx] == 0) {
             finishTime[idx] = time;
             turnAroundTime[idx] = time - getArrivalTime(processes[idx]);
@@ -294,121 +305,77 @@ void agingAlgorithm() {
             done[idx] = true;
         }
     }
-    fillInWaitTime(); // Mark wait times in the timeline
+    fillInWaitTime();
 }
 
-// Tracing Function: printTimeline
-// This function prints the timeline of process execution, showing which process is running ('*') or waiting ('.') at each time instant.
-void printTimelineOutput()
-{
-    // Prints the time instants (0-9 repeating)
-    for (int i = 0; i <= last_instant; i++)
-        cout << i % 10 << " ";
-    cout << "\n";
-    cout << "------------------------------------------------\n";
-
-    // Iterates through each process
-    for (int i = 0; i < process_count; i++)
-    {
-        // Prints the process name
-        cout << getProcessName(processes[i]) << "     |";
-        // Prints the state of the process at each time instant
-        for (int j = 0; j < last_instant; j++)
-        {
-            cout << timeline[j][i] << "|";
-        }
-        cout << " \n";
+// Prints timeline trace output format (Option 1)
+void printTimelineOutput() {
+    cout << "Time: ";
+    for (int t = 0; t < last_instant; ++t) {
+        cout << t;
+        if (t + 1 < last_instant) cout << " ";
     }
-    cout << "------------------------------------------------\n";
+    cout << "\n\n";
+
+    for (int i = 0; i < process_count; ++i) {
+        cout << getProcessName(processes[i]) << ": ";
+        for (int t = 0; t < last_instant; ++t) {
+            char c = timeline[t][i];
+            cout << (c == ' ' ? '.' : c);
+            if (t + 1 < last_instant) cout << " ";
+        }
+        cout << "\n";
+    }
 }
 
-
-// Statistics Functions
-
-// printAlgorithm: Prints the name of the current scheduling algorithm.
-void printAlgorithm(int algorithm_id_val, int quantum_val)
-{
-    if(algorithm_id_val == 2) // For Round Robin (RR-) which includes quantum
-        cout << ALGORITHMS[algorithm_id_val] << quantum_val << endl;
-    else
-        cout << ALGORITHMS[algorithm_id_val] << endl;
+// Functions to print statistics format table (Option 2)
+void printAlgorithm(int algorithm_id_val, int quantum_val) {
+    if (algorithm_id_val == 2) cout << ALGORITHMS[algorithm_id_val] << quantum_val << endl;
+    else cout << ALGORITHMS[algorithm_id_val] << endl;
 }
-
-// printProcesses: Prints the names of all processes.
-void printProcesses()
-{
+void printProcesses() {
     cout << "Process    ";
     for (int i = 0; i < process_count; i++)
         cout << "|  " << getProcessName(processes[i]) << "  ";
     cout << "|\n";
 }
-
-// printArrivalTime: Prints the arrival time for each process.
-void printArrivalTime()
-{
+void printArrivalTime() {
     cout << "Arrival    ";
     for (int i = 0; i < process_count; i++)
-        printf("|%3d  ",getArrivalTime(processes[i]));
-    cout<<"|\n";
+        printf("|%3d  ", getArrivalTime(processes[i]));
+    cout << "|\n";
 }
-
-// printServiceTime: Prints the service time for each process and calculates the mean service time.
-void printServiceTime()
-{
+void printServiceTime() {
     cout << "Service    |";
     for (int i = 0; i < process_count; i++)
-        printf("%3d  |",getServiceTime(processes[i]));
+        printf("%3d  |", getServiceTime(processes[i]));
     cout << " Mean|\n";
 }
-
-// printFinishTime: Prints the finish time for each process.
-void printFinishTime()
-{
+void printFinishTime() {
     cout << "Finish     ";
     for (int i = 0; i < process_count; i++)
-        printf("|%3d  ",finishTime[i]);
+        printf("|%3d  ", finishTime[i]);
     cout << "|-----|\n";
 }
-
-// printTurnAroundTime: Prints the turnaround time for each process and calculates the mean turnaround time.
-void printTurnAroundTime()
-{
+void printTurnAroundTime() {
     cout << "Turnaround |";
     int sum = 0;
-    for (int i = 0; i < process_count; i++)
-    {
-        printf("%3d  |",turnAroundTime[i]);
+    for (int i = 0; i < process_count; i++) {
+        printf("%3d  |", turnAroundTime[i]);
         sum += turnAroundTime[i];
     }
-    if((1.0 * sum / turnAroundTime.size())>=10)
-		printf("%2.2f|\n",(1.0 * sum / turnAroundTime.size()));
-    else
-	 	printf(" %2.2f|\n",(1.0 * sum / turnAroundTime.size()));
+    printf(" %2.2f|\n", (1.0 * sum / turnAroundTime.size()));
 }
-
-// printNormTurn: Prints the normalized turnaround time for each process and calculates the mean normalized turnaround time.
-void printNormTurn()
-{
+void printNormTurn() {
     cout << "NormTurn   |";
     float sum = 0;
-    for (int i = 0; i < process_count; i++)
-    {
-        if( normTurn[i]>=10 )
-            printf("%2.2f|",normTurn[i]);
-        else
-            printf(" %2.2f|",normTurn[i]);
+    for (int i = 0; i < process_count; i++) {
+        printf(" %2.2f|", normTurn[i]);
         sum += normTurn[i];
     }
-
-    if( (1.0 * sum / normTurn.size()) >=10 )
-        printf("%2.2f|\n",(1.0 * sum / normTurn.size()));
-	else
-        printf(" %2.2f|\n",(1.0 * sum / normTurn.size()));
+    printf(" %2.2f|\n", (1.0 * sum / normTurn.size()));
 }
-
-// printStats: Orchestrates the printing of all statistical metrics.
-void printStatsOutput(int algorithm_id_val, int quantum_val)
-{
+void printStatsOutput(int algorithm_id_val, int quantum_val) {
     printAlgorithm(algorithm_id_val, quantum_val);
     printProcesses();
     printArrivalTime();
@@ -418,43 +385,50 @@ void printStatsOutput(int algorithm_id_val, int quantum_val)
     printNormTurn();
 }
 
-
+// Driver function
 int main() {
-    cout << "=========================================\n";
-    cout << " CPU SCHEDULING SIMULATOR TOOL      \n";
-    cout << " (Supports FCFS, RR, SPN, SRT, HRRN, AGING)\n";
-    cout << "=========================================\n\n";
-
-    cout << "Enter number of processes: ";
+    cout << "Enter total number of processes: ";
     cin >> process_count;
+
     processes.resize(process_count);
-    finishTime.resize(process_count);
-    turnAroundTime.resize(process_count);
-    normTurn.resize(process_count);
+    finishTime.assign(process_count, 0);
+    turnAroundTime.assign(process_count, 0);
+    normTurn.assign(process_count, 0.0f);
+
+    cout << "Enter process name, arrival time, and service time for each process:\n";
     for (int i = 0; i < process_count; ++i) {
         string name; int arrival, service;
-        cout << "Enter name, arrival time, and service time for process " << i + 1 << ": ";
         cin >> name >> arrival >> service;
+
         processes[i] = make_tuple(name, arrival, service);
         processToIndex[name] = i;
+
+        // Update total timeline size based on latest finishing possibility
         last_instant = max(last_instant, arrival + service);
     }
-    // Add some buffer to last_instant for timeline display
-    last_instant += 10;
+
+    last_instant += 10; // Extra padding in timeline for safe visualization
     timeline = vector<vector<char>>(last_instant, vector<char>(process_count, ' '));
 
-    cout << "Choose Algorithm:\n1. FCFS\n2. RR\n3. SPN\n4. SRT\n5. HRRN\n6. AGING\nEnter choice: ";
+    cout << "Select the Scheduling Algorithm:\n";
+    cout << "1. First Come First Serve (FCFS)\n";
+    cout << "2. Round Robin (RR)\n";
+    cout << "3. Shortest Process Next (SPN)\n";
+    cout << "4. Shortest Remaining Time (SRT)\n";
+    cout << "5. Highest Response Ratio Next (HRRN)\n";
+    cout << "6. Aging\n";
+    cout << "Enter choice: ";
     int choice; cin >> choice;
 
-    int quantum = -1; // Default quantum, only used for RR
+    int quantum = -1;
     if (choice == 2) {
-        cout << "Enter quantum for Round Robin: ";
+        cout << "Enter Time Quantum: ";
         cin >> quantum;
     }
 
-    clear_timeline(); // Clear timeline before running the selected algorithm
+    clear_timeline(); // reset timeline before executing selected algorithm
 
-    // Execute the chosen algorithm
+    //invoke chosen scheduling algorithm
     switch (choice) {
         case 1: firstComeFirstServe(); break;
         case 2: roundRobin(quantum); break;
@@ -467,17 +441,15 @@ int main() {
             return 1;
     }
 
-    cout << "\nChoose Output Format:\n1. Trace\n2. Statistics\nEnter choice: ";
-    int outputChoice;
-    cin >> outputChoice;
+    cout << "Select the Output Format:\n1. Trace Format\n2. Statistics Format\nEnter choice: ";
+    int outputChoice; cin >> outputChoice;
 
-    if (outputChoice == 1) {
-        printTimelineOutput(); // Call the new printTimelineOutput function
-    } else if (outputChoice == 2) {
-        printStatsOutput(choice, quantum); // Call the new printStatsOutput function with algorithm choice and quantum
-    } else {
+    if (outputChoice == 1)
+        printTimelineOutput(); // show '*'/'.' per time unit
+    else if (outputChoice == 2)
+        printStatsOutput(choice, quantum); // show tables
+    else
         cout << "Invalid output choice." << endl;
-    }
 
     return 0;
 }
