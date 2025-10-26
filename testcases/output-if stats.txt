@@ -1,7 +1,10 @@
-RR-2
-Process    |  P1  |  P2  |  P3  |
-Arrival    |  0   |  2   |  4   |
-Service    |  5   |  3   |  1   | Mean
-Finish     | 10   | 9    | 7    |-----|
-Turnaround | 10  | 7    | 3    |  6.67|
-NormTurn   | 2.00| 2.33 | 3.00 |  2.44|
+                                                 ~IF STATISTICS FORMAT IS THE CHOICE~
+Enter choice: 2
+SPN
+Process    |  a1  |  a2  |
+Arrival    |  0  |  2  |
+Service    |  4  |  5  | Mean|
+Finish     |  4  |  9  |-----|
+Turnaround |  4  |  7  | 5.50|
+NormTurn   | 1.00| 1.40| 1.20|
+[?2004h
