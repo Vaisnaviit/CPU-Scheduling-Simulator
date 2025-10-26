@@ -29,4 +29,3 @@ Service    |  4  |  5  | Mean|
 Finish     |  4  |  9  |-----|
 Turnaround |  4  |  7  | 5.50|
 NormTurn   | 1.00| 1.40| 1.20|
-[?2004h
